@@ -14,13 +14,14 @@ from pwnlib.util.packing import *
 
 log = getLogger(__name__)
 
-def fmtstr_payload(dic,offset,num_writen=0,write_size='byte',bit=64):
+def fmtstr_payload(offset,dic,numbwritten=0,write_size='byte',bits=64,mem_align = 0):
     """
-    dic: a array of addr:value
     offset:buf distance from stack
-    num_writen: number written
+    dic: a array of addr:value
+    numbwritten: number written
     write_size: 'byte', 'short', 'int'
-    bit: 32,64
+    bits: 32,64
+    mem_align align payload to memory
     """
     config = {
         32 : {
@@ -35,7 +36,8 @@ def fmtstr_payload(dic,offset,num_writen=0,write_size='byte',bit=64):
     }
     if write_size not in ['byte', 'short', 'int']:
         log.error("write_size must be 'byte', 'short' or 'int'")
-    number, step, mask, formatz, decalage ,ptr_size,pack = config[bit][write_size]
+    number, step, mask, formatz, decalage ,ptr_size,pack = config[bits][write_size]
+
     payload=""
     adds=""
     count=0
@@ -43,15 +45,35 @@ def fmtstr_payload(dic,offset,num_writen=0,write_size='byte',bit=64):
         for i in range(number):
             adds+=pack(add+i*step)
             n=(value>>(i*decalage))&mask
-            pad=(n-num)&mask
+            pad=(n-numbwritten)&mask
             if pad == 0:
                 payload+="%{}$"+formatz+"n"
             else:
                 payload+="%{}c".format(pad)+"%{}$"+formatz+"n"
-            num=n
+            numbwritten=n
             count+=1
-    length = (len(payload)+ptr_size-1)/ptr_size*ptr_size
+    length = (len(payload)+ mem_align + ptr_size -1)/ptr_size*ptr_size
     payload=payload.ljust(length,'\x00')+adds
     payload=payload.format(*[offset+length/ptr_size + i for i in range(count)])
     return payload
 
+def find_offset(execute_fmt,bits = 64):
+    def leak_stack(offset, prefix=""):
+        leak = execute_fmt(prefix+"START%{}".format(offset))
+    if bits == 64:
+        p = p64
+    else:
+        p = p32
+    marker = cyclic(20)
+    for off in range(1,1000):
+	leak = leak_stack(off, marker)
+	leak = p(leak)
+	pad = cyclic_find(leak)
+	if pad >= 0 and pad < 20:
+            mark = "ASDASD"
+            data = execute_fmt(mark)
+            written = data.find(mark)
+	    return off, written
+    else:
+	log.error("Could not find offset to format string on stack")
+	return None, None
